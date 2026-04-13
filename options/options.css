@@ -103,6 +103,24 @@ input[type="password"]:focus {
   flex: 1;
 }
 
+.pat-saved {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+}
+
+.pat-saved.hidden { display: none; }
+
+.pat-saved-indicator {
+  font-size: 13px;
+  color: #3fb950;
+  flex: 1;
+}
+
 .hint {
   font-size: 12px;
   color: #6e7681;

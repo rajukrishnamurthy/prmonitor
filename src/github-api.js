@@ -1,5 +1,20 @@
+// Bare hostname only — no scheme, path, port, or query string.
+function validateHostname(host) {
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-.]{0,251}[a-zA-Z0-9])?$/.test(host) || host.includes('..')) {
+    throw new Error(`Invalid GitHub host: "${host}". Provide a bare hostname (e.g. github.com)`);
+  }
+}
+
+// GitHub usernames: 1–39 chars, alphanumeric and hyphens only.
+function validateUsername(username) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,37}[a-zA-Z0-9]$/.test(username) && !/^[a-zA-Z0-9]$/.test(username)) {
+    throw new Error(`Invalid GitHub username: "${username}"`);
+  }
+}
+
 export class GitHubClient {
   constructor({ pat, githubHost = 'github.com' }) {
+    validateHostname(githubHost);
     this.pat = pat;
     this.host = githubHost;
     this.baseUrl = githubHost === 'github.com'
@@ -57,6 +72,8 @@ export class GitHubClient {
   // Fetch all PRs needed for the extension in parallel.
   // Returns { directRequests, teamRequests, commentedPRs, myPRs }
   async fetchAll({ username, teams = [], includeTeams = false }) {
+    validateUsername(username);
+
     const baseQueries = [
       // PRs where the user is review-requested (direct + team membership)
       this.searchPRs(`is:pr is:open review-requested:${username} archived:false`),

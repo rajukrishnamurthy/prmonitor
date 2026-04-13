@@ -22,11 +22,20 @@
       </div>
 
       <div class="field">
-        <label for="pat">Personal Access Token</label>
-        <div class="input-row">
+        <label>Personal Access Token</label>
+
+        <!-- Shown when a token is already saved — never displays the raw value -->
+        <div id="patSaved" class="pat-saved hidden">
+          <span class="pat-saved-indicator">🔑 Token saved</span>
+          <button id="replacePatBtn" class="btn-secondary" type="button">Replace</button>
+        </div>
+
+        <!-- Shown when no token is saved, or after Replace is clicked -->
+        <div id="patEntry" class="input-row">
           <input type="password" id="pat" placeholder="ghp_••••••••••••••••••••••••••••••••••••" autocomplete="off" spellcheck="false" />
           <button id="togglePat" class="btn-secondary" type="button">Show</button>
         </div>
+
         <span class="hint">Needs <code>repo</code> and <code>read:org</code> scopes. <a id="tokenLink" href="#" target="_blank">Create a token</a></span>
       </div>
 
