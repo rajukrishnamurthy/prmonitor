@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PR Monitor — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>PR Monitor Settings</h1>
+    </header>
+
+    <section class="card">
+      <h2>GitHub Connection</h2>
+
+      <div class="field">
+        <label for="githubHost">GitHub Host</label>
+        <input type="text" id="githubHost" placeholder="github.com" autocomplete="off" spellcheck="false" />
+        <span class="hint">Leave as <code>github.com</code> or enter your GitHub Enterprise hostname (e.g. <code>github.mycompany.com</code>)</span>
+      </div>
+
+      <div class="field">
+        <label for="pat">Personal Access Token</label>
+        <div class="input-row">
+          <input type="password" id="pat" placeholder="ghp_••••••••••••••••••••••••••••••••••••" autocomplete="off" spellcheck="false" />
+          <button id="togglePat" class="btn-secondary" type="button">Show</button>
+        </div>
+        <span class="hint">Needs <code>repo</code> and <code>read:org</code> scopes. <a id="tokenLink" href="#" target="_blank">Create a token</a></span>
+      </div>
+
+      <div class="field-row">
+        <button id="testBtn" class="btn-secondary" type="button">Test connection</button>
+        <span id="testResult" class="test-result"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Review Filters</h2>
+
+      <div class="field">
+        <label class="toggle-label">
+          <input type="checkbox" id="includeTeams" />
+          <span>Include team review requests</span>
+        </label>
+        <span class="hint">When enabled, PRs requested from your teams will appear in Incoming.</span>
+      </div>
+
+      <div class="field" id="teamsField">
+        <label for="teams">Teams</label>
+        <input type="text" id="teams" placeholder="acme-org/platform, acme-org/backend" autocomplete="off" spellcheck="false" />
+        <span class="hint">Comma-separated list of <code>org/team</code> slugs</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Polling</h2>
+      <div class="field">
+        <label>Poll interval</label>
+        <div class="radio-group">
+          <label><input type="radio" name="pollInterval" value="1" /> 1 min</label>
+          <label><input type="radio" name="pollInterval" value="5" /> 5 min</label>
+          <label><input type="radio" name="pollInterval" value="15" /> 15 min</label>
+          <label><input type="radio" name="pollInterval" value="30" /> 30 min</label>
+        </div>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="saveBtn" class="btn-primary" type="button">Save settings</button>
+      <span id="saveStatus" class="save-status"></span>
+    </div>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

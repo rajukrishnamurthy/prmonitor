@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PR Monitor</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <span class="app-title">PR Monitor</span>
+    <div class="header-actions">
+      <button id="refreshBtn" class="icon-btn" title="Refresh now">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="incoming">
+      Incoming <span class="tab-count" id="count-incoming"></span>
+    </button>
+    <button class="tab" data-tab="muted">
+      Muted <span class="tab-count" id="count-muted"></span>
+    </button>
+    <button class="tab" data-tab="reviewed">
+      Reviewed <span class="tab-count" id="count-reviewed"></span>
+    </button>
+    <button class="tab" data-tab="myPRs">
+      Mine <span class="tab-count" id="count-myPRs"></span>
+    </button>
+  </nav>
+
+  <div id="tab-incoming" class="tab-panel active">
+    <div class="filter-bar">
+      <div class="toggle-pills" id="requestFilter">
+        <button class="pill active" data-value="direct">Direct only</button>
+        <button class="pill" data-value="teams">Include teams</button>
+      </div>
+    </div>
+    <div class="pr-list" id="list-incoming"></div>
+  </div>
+
+  <div id="tab-muted" class="tab-panel">
+    <div class="pr-list" id="list-muted"></div>
+  </div>
+
+  <div id="tab-reviewed" class="tab-panel">
+    <div class="pr-list" id="list-reviewed"></div>
+  </div>
+
+  <div id="tab-myPRs" class="tab-panel">
+    <div class="pr-list" id="list-myPRs"></div>
+  </div>
+
+  <!-- Mute hours prompt dialog -->
+  <div id="muteDialog" class="dialog-overlay hidden">
+    <div class="dialog">
+      <p>Mute for how many hours?</p>
+      <input type="number" id="muteHours" min="1" max="8760" value="24" />
+      <div class="dialog-actions">
+        <button id="muteCancelBtn" class="btn-secondary">Cancel</button>
+        <button id="muteConfirmBtn" class="btn-primary">Mute</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span id="lastUpdated" class="last-updated"></span>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

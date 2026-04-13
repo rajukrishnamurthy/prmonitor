@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "PR Monitor",
+  "version": "1.0.0",
+  "description": "Monitor GitHub pull requests — incoming, muted, reviewed, and yours.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://api.github.com/*",
+    "https://*/api/v3/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "PR Monitor"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  }
+}
