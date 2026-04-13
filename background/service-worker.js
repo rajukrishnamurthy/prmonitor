@@ -63,9 +63,9 @@ async function pollGitHub() {
 
   const client = new GitHubClient({ pat: settings.pat, githubHost: settings.githubHost });
 
-  let directRequests, teamRequests, myPRs;
+  let directRequests, teamRequests, commentedPRs, myPRs;
   try {
-    ({ directRequests, teamRequests, myPRs } = await client.fetchAll({
+    ({ directRequests, teamRequests, commentedPRs, myPRs } = await client.fetchAll({
       username: settings.username,
       teams: settings.teams || [],
       includeTeams: settings.includeTeams || false,
@@ -75,14 +75,33 @@ async function pollGitHub() {
     return;
   }
 
-  // Build a deduplicated map: nodeId → pr (with source flags)
+  // Build a deduplicated map: nodeId → pr (with source flags).
+  // Insertion order determines which object "wins" for deduplication;
+  // flags are merged onto whichever object is already in the map.
+
   const prMap = new Map();
 
   for (const pr of myPRs) {
     pr._isMyPR = true;
     pr._isDirectRequest = false;
     pr._isTeamRequest = false;
+    pr._wasCommenter = false;
     prMap.set(pr.node_id, pr);
+  }
+
+  // commentedPRs: user reviewed/commented but is no longer in requested_reviewers.
+  // These feed the Reviewed tab directly without needing enrichment to detect it.
+  for (const pr of commentedPRs) {
+    const existing = prMap.get(pr.node_id);
+    if (existing) {
+      existing._wasCommenter = true;
+    } else {
+      pr._wasCommenter = true;
+      pr._isDirectRequest = false;
+      pr._isTeamRequest = false;
+      pr._isMyPR = false;
+      prMap.set(pr.node_id, pr);
+    }
   }
 
   for (const pr of teamRequests) {
@@ -93,6 +112,7 @@ async function pollGitHub() {
       pr._isTeamRequest = true;
       pr._isDirectRequest = false;
       pr._isMyPR = false;
+      pr._wasCommenter = false;
       prMap.set(pr.node_id, pr);
     }
   }
@@ -105,6 +125,7 @@ async function pollGitHub() {
       pr._isDirectRequest = true;
       pr._isTeamRequest = false;
       pr._isMyPR = false;
+      pr._wasCommenter = false;
       prMap.set(pr.node_id, pr);
     }
   }

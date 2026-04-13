@@ -70,8 +70,12 @@ export function classifyPRs(prs, allState, settings) {
     }
 
     // --- Already reviewed ---
-    if (state.reviewed || pr._userReviewed) {
-      // Re-requested → move back to incoming
+    // _wasCommenter: PR came from the commenter:USER search — user interacted
+    // but is no longer in requested_reviewers, so it belongs in Reviewed.
+    // _userReviewed: enrichment confirmed the user submitted a formal review.
+    // In both cases, if the author re-requested (_reviewRerequested), it moves
+    // back to Incoming.
+    if (pr._wasCommenter || state.reviewed || pr._userReviewed) {
       if (pr._reviewRerequested) {
         incoming.push(pr);
       } else {

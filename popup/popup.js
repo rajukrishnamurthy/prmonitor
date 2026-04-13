@@ -108,7 +108,7 @@ function buildBaseCard(pr) {
       <img class="pr-avatar" src="${esc(pr.user?.avatar_url || '')}" alt="${esc(pr.user?.login || '')}" />
       <div class="pr-main">
         <div class="pr-repo">${esc(owner)}/${esc(repo)} #${pr.number}</div>
-        <a class="pr-title" href="${esc(pr.html_url)}" target="_blank" title="${esc(pr.title)}">${esc(pr.title)}</a>
+        <a class="pr-title" href="${safeHref(pr.html_url)}" target="_blank" title="${esc(pr.title)}">${esc(pr.title)}</a>
         <div class="pr-meta">
           <span>${esc(pr.user?.login || '')}</span>
           <span>•</span>
@@ -419,6 +419,16 @@ function esc(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Only allow https: URLs in href attributes — blocks javascript: and data: URIs.
+function safeHref(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' ? esc(url) : '#';
+  } catch {
+    return '#';
+  }
 }
 
 function parseRepoFromPR(pr) {

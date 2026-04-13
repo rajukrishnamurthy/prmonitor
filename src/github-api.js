@@ -19,8 +19,10 @@ export class GitHubClient {
       },
     });
     if (!res.ok) {
+      // Truncate body to avoid leaking query details or sensitive response content
       const text = await res.text().catch(() => '');
-      throw new Error(`GitHub API error ${res.status}: ${text}`);
+      const summary = text.slice(0, 120).replace(/\n/g, ' ');
+      throw new Error(`GitHub API error ${res.status}: ${summary}`);
     }
     return res.json();
   }
@@ -53,19 +55,24 @@ export class GitHubClient {
   }
 
   // Fetch all PRs needed for the extension in parallel.
-  // Returns { directRequests, teamRequests, myPRs }
+  // Returns { directRequests, teamRequests, commentedPRs, myPRs }
   async fetchAll({ username, teams = [], includeTeams = false }) {
-    const promises = [
-      this.searchPRs(`is:pr is:open review-requested:${username}`),
-      this.searchPRs(`is:pr is:open author:${username}`),
+    const baseQueries = [
+      // PRs where the user is review-requested (direct + team membership)
+      this.searchPRs(`is:pr is:open review-requested:${username} archived:false`),
+      // PRs the user commented on / reviewed but is no longer requested for
+      // — this is what populates the Reviewed tab
+      this.searchPRs(`is:pr is:open commenter:${username} -review-requested:${username} -author:${username} archived:false`),
+      // The user's own open PRs
+      this.searchPRs(`is:pr is:open author:${username} archived:false`),
     ];
 
     const teamQueries = includeTeams && teams.length > 0
-      ? teams.map(team => this.searchPRs(`is:pr is:open team-review-requested:${team}`))
+      ? teams.map(team => this.searchPRs(`is:pr is:open team-review-requested:${team} archived:false`))
       : [];
 
-    const [directRequests, myPRs, ...teamResults] = await Promise.all([
-      ...promises,
+    const [directRequests, commentedPRs, myPRs, ...teamResults] = await Promise.all([
+      ...baseQueries,
       ...teamQueries,
     ]);
 
@@ -79,6 +86,7 @@ export class GitHubClient {
 
     return {
       directRequests,
+      commentedPRs,
       teamRequests: [...teamMap.values()],
       myPRs,
     };
