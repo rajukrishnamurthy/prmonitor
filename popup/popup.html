@@ -41,10 +41,14 @@
 
   <div id="tab-incoming" class="tab-panel active">
     <div class="filter-bar">
-      <div class="toggle-pills" id="requestFilter">
-        <button class="pill active" data-value="direct">Direct only</button>
-        <button class="pill" data-value="teams">Include teams</button>
-      </div>
+      <label class="filter-check">
+        <input type="checkbox" id="includeTeamsChk">
+        Include Teams
+      </label>
+      <label class="filter-check">
+        <input type="checkbox" id="includeDraftsChk">
+        Include Drafts
+      </label>
     </div>
     <div class="pr-list" id="list-incoming"></div>
   </div>
@@ -59,18 +63,6 @@
 
   <div id="tab-myPRs" class="tab-panel">
     <div class="pr-list" id="list-myPRs"></div>
-  </div>
-
-  <!-- Mute hours prompt dialog -->
-  <div id="muteDialog" class="dialog-overlay hidden">
-    <div class="dialog">
-      <p>Mute for how many hours?</p>
-      <input type="number" id="muteHours" min="1" max="8760" value="24" />
-      <div class="dialog-actions">
-        <button id="muteCancelBtn" class="btn-secondary">Cancel</button>
-        <button id="muteConfirmBtn" class="btn-primary">Mute</button>
-      </div>
-    </div>
   </div>
 
   <footer>

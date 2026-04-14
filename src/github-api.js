@@ -69,6 +69,11 @@ export class GitHubClient {
     return this._fetch(`/repos/${owner}/${repo}/pulls/${pullNumber}/requested_reviewers`);
   }
 
+  // Get PR details (additions, deletions, changed_files not in search results).
+  async getPRDetails(owner, repo, pullNumber) {
+    return this._fetch(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+  }
+
   // Fetch all PRs needed for the extension in parallel.
   // Returns { directRequests, teamRequests, commentedPRs, myPRs }
   async fetchAll({ username, teams = [], includeTeams = false }) {

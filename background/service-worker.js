@@ -5,6 +5,7 @@ import {
   setPRState,
   setCachedPRs,
   pruneStaleState,
+  getPopupPrefs,
 } from '../src/storage.js';
 
 const ALARM_NAME = 'poll';
@@ -141,13 +142,18 @@ async function pollGitHub() {
 
   await setCachedPRs(enriched);
 
-  // Badge = count of incoming (direct or team) non-muted PRs
+  // Badge = count matching the popup's current incoming filter
+  const popupPrefs = await getPopupPrefs();
+  const badgeUseTeams = popupPrefs ? popupPrefs.requestFilter === 'teams' : (settings.includeTeams || false);
+  const badgeIgnoreDrafts = popupPrefs ? popupPrefs.ignoreDrafts : false;
+
   const incomingCount = enriched.filter(pr => {
     if (pr._isMyPR) return false;
+    if (badgeIgnoreDrafts && pr.draft) return false;
     if (pr._userReviewed && !pr._reviewRerequested) return false;
     const state = allState[pr.node_id] || {};
     if (state.muted) return false;
-    return pr._isDirectRequest || pr._isTeamRequest;
+    return pr._isDirectRequest || (badgeUseTeams && pr._isTeamRequest);
   }).length;
 
   updateBadge(incomingCount);
@@ -161,11 +167,20 @@ async function enrichPR(pr, client, username, allState) {
   const state = allState[pr.node_id] || {};
   const needsComments = state.muteType === 'until_comment';
 
-  const [reviews, comments, requestedReviewers] = await Promise.all([
+  const [reviews, comments, requestedReviewers, prDetails] = await Promise.all([
     pr._isMyPR ? Promise.resolve([]) : client.getReviews(owner, repo, num).catch(() => []),
     needsComments ? client.getIssueComments(owner, repo, num).catch(() => []) : Promise.resolve(null),
-    pr._isMyPR ? Promise.resolve({ users: [], teams: [] }) : client.getRequestedReviewers(owner, repo, num).catch(() => ({ users: [], teams: [] })),
+    client.getRequestedReviewers(owner, repo, num).catch(() => ({ users: [], teams: [] })),
+    client.getPRDetails(owner, repo, num).catch(() => null),
   ]);
+
+  // Attach diff stats and merge state (not present in search results)
+  if (prDetails) {
+    pr.additions = prDetails.additions;
+    pr.deletions = prDetails.deletions;
+    pr.changed_files = prDetails.changed_files;
+    pr._mergeableState = prDetails.mergeable_state ?? null;
+  }
 
   // Override _isDirectRequest with ground truth: user must be explicitly in the
   // users[] list. review-requested:@me also matches team memberships, so the
@@ -182,6 +197,32 @@ async function enrichPR(pr, client, username, allState) {
 
   // Re-request: user reviewed AND is now back in requested_reviewers
   pr._reviewRerequested = pr._userReviewed && pr._isDirectRequest;
+
+  // Pending reviewer count:
+  //   myPRs  → all requested users + teams (everyone still needs to review)
+  //   others → exclude self (the current user is one of the requestees)
+  const totalRequested = requestedReviewers.users.length + requestedReviewers.teams.length;
+  pr._pendingReviewerCount = pr._isMyPR
+    ? totalRequested
+    : Math.max(0, totalRequested - (pr._isDirectRequest ? 1 : 0));
+
+  // Overall PR review state (for non-myPR cards): latest non-comment state per reviewer
+  if (!pr._isMyPR && reviews.length > 0) {
+    const latestByReviewer = new Map();
+    for (const r of reviews) {
+      if (r.state !== 'COMMENTED' && r.state !== 'DISMISSED') {
+        latestByReviewer.set(r.user?.login, r.state);
+      }
+    }
+    const states = [...latestByReviewer.values()];
+    if (states.includes('CHANGES_REQUESTED')) {
+      pr._prReviewState = 'CHANGES_REQUESTED';
+    } else if (states.includes('APPROVED')) {
+      pr._prReviewState = 'APPROVED';
+    } else {
+      pr._prReviewState = null;
+    }
+  }
 
   // Latest author comment ID for mute-until-comment expiry
   if (comments) {

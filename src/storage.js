@@ -61,6 +61,15 @@ export async function pruneStaleState(activeNodeIds) {
   await chrome.storage.local.set({ prState });
 }
 
+export async function getPopupPrefs() {
+  const result = await chrome.storage.local.get('popupPrefs');
+  return result.popupPrefs || null; // null = not yet saved; caller applies defaults
+}
+
+export async function savePopupPrefs(prefs) {
+  await chrome.storage.local.set({ popupPrefs: prefs });
+}
+
 export async function getCachedPRs() {
   const result = await chrome.storage.local.get(['cachedPRs', 'lastUpdated']);
   return {

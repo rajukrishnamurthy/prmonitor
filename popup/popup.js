@@ -4,6 +4,8 @@ import {
   getAllPRState,
   setPRState,
   clearPRState,
+  getPopupPrefs,
+  savePopupPrefs,
 } from '../src/storage.js';
 import { classifyPRs, relativeTime } from '../src/pr-classifier.js';
 
@@ -15,8 +17,8 @@ let classified = { incoming: [], muted: [], reviewed: [], myPRs: [] };
 let activeTab = 'incoming';
 // Popup-level toggle: 'direct' | 'teams'
 let requestFilter = 'direct';
-// Pending mute action waiting for hours input
-let pendingMutePR = null;
+// Whether to hide draft PRs in the incoming tab
+let ignoreDrafts = false;
 // Currently open mute menu node_id
 let openMuteMenuId = null;
 
@@ -30,9 +32,16 @@ async function init() {
     return;
   }
 
-  // Default filter matches settings
-  requestFilter = settings.includeTeams ? 'teams' : 'direct';
-  syncFilterPills();
+  // Restore persisted popup prefs, falling back to settings defaults
+  const savedPrefs = await getPopupPrefs();
+  if (savedPrefs) {
+    requestFilter = savedPrefs.requestFilter;
+    ignoreDrafts = savedPrefs.ignoreDrafts;
+  } else {
+    requestFilter = settings.includeTeams ? 'teams' : 'direct';
+    ignoreDrafts = false;
+  }
+  syncFilterUI();
 
   allPRState = await getAllPRState();
   const { raw, lastUpdated } = await getCachedPRs();
@@ -51,19 +60,24 @@ async function init() {
 // ─── Render ───────────────────────────────────────────────────────────────────
 
 function renderAll(raw, lastUpdated) {
-  // Apply popup-level filter on top of stored settings
   const effectiveSettings = {
     ...settings,
     includeTeams: requestFilter === 'teams',
   };
   classified = classifyPRs(raw, allPRState, effectiveSettings);
 
-  renderList('incoming', classified.incoming, renderIncomingCard);
+  // Apply draft filter to incoming only
+  const displayedIncoming = ignoreDrafts
+    ? classified.incoming.filter(pr => !pr.draft)
+    : classified.incoming;
+
+  renderList('incoming', displayedIncoming, renderIncomingCard);
   renderList('muted', classified.muted, renderMutedCard);
   renderList('reviewed', classified.reviewed, renderReviewedCard);
   renderList('myPRs', classified.myPRs, renderMyPRCard);
 
-  updateCounts();
+  updateCounts(displayedIncoming.length);
+  updateToolbarBadge(displayedIncoming.length);
   updateLastUpdated(lastUpdated);
 }
 
@@ -79,10 +93,20 @@ function renderList(tab, prs, cardFn) {
   }
 }
 
-function updateCounts() {
-  for (const [tab, list] of Object.entries(classified)) {
+function updateCounts(incomingCount) {
+  document.getElementById('count-incoming').textContent = incomingCount > 0 ? incomingCount : '';
+  for (const tab of ['muted', 'reviewed', 'myPRs']) {
     const el = document.getElementById(`count-${tab}`);
-    if (el) el.textContent = list.length > 0 ? list.length : '';
+    if (el) el.textContent = classified[tab].length > 0 ? classified[tab].length : '';
+  }
+}
+
+function updateToolbarBadge(count) {
+  if (count > 0) {
+    chrome.action.setBadgeText({ text: String(count) });
+    chrome.action.setBadgeBackgroundColor({ color: '#e5534b' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
   }
 }
 
@@ -94,95 +118,146 @@ function updateLastUpdated(ts) {
 
 // ─── Card builders ────────────────────────────────────────────────────────────
 
+/**
+ * Build the shared card skeleton.
+ * Returns { card, titleRow, statusRow, infoRow } so callers can inject extras.
+ */
 function buildBaseCard(pr) {
-  const { owner, repo } = parseRepoFromPR(pr);
+  const { repo } = parseRepoFromPR(pr);
+
   const card = document.createElement('div');
   card.className = 'pr-card';
   card.dataset.nodeId = pr.node_id;
 
-  const isDraft = pr.draft;
-  const ciDot = ciStatusDot(pr);
+  const body = document.createElement('div');
+  body.className = 'pr-card-body';
 
-  card.innerHTML = `
-    <div class="pr-card-top">
-      <img class="pr-avatar" src="${esc(pr.user?.avatar_url || '')}" alt="${esc(pr.user?.login || '')}" />
-      <div class="pr-main">
-        <div class="pr-repo">${esc(owner)}/${esc(repo)} #${pr.number}</div>
-        <a class="pr-title" href="${safeHref(pr.html_url)}" target="_blank" title="${esc(pr.title)}">${esc(pr.title)}</a>
-        <div class="pr-meta">
-          <span>${esc(pr.user?.login || '')}</span>
-          <span>•</span>
-          <span>${relativeTime(pr.updated_at)}</span>
-          ${isDraft ? '<span class="badge badge-draft">Draft</span>' : ''}
-          ${ciDot}
-        </div>
-      </div>
-    </div>
-  `;
-  return card;
+  // ── Left column ───────────────────────────────────
+  const left = document.createElement('div');
+  left.className = 'pr-card-left';
+
+  // Row 1: title (action buttons injected by callers)
+  const titleRow = document.createElement('div');
+  titleRow.className = 'pr-row-title';
+
+  const titleLink = document.createElement('a');
+  titleLink.className = 'pr-title';
+  titleLink.href = safeHref(pr.html_url);
+  titleLink.target = '_blank';
+  titleLink.setAttribute('title', esc(pr.title));
+  titleLink.textContent = pr.title;
+  titleRow.appendChild(titleLink);
+  left.appendChild(titleRow);
+
+  // Row 2: status badges
+  const statusRow = document.createElement('div');
+  statusRow.className = 'pr-row-status';
+
+  if (pr.draft) {
+    statusRow.insertAdjacentHTML('beforeend', '<span class="badge badge-draft">Draft</span>');
+  }
+
+  const statusBadge = prStatusBadge(pr);
+  if (statusBadge) statusRow.insertAdjacentHTML('beforeend', statusBadge);
+
+  const conflictsBadge = prConflictsBadge(pr);
+  if (conflictsBadge) statusRow.insertAdjacentHTML('beforeend', conflictsBadge);
+
+  const reviewBadge = prReviewBadge(pr);
+  if (reviewBadge) statusRow.insertAdjacentHTML('beforeend', reviewBadge);
+
+  left.appendChild(statusRow);
+
+  // Row 3: repo/diff info
+  const infoRow = document.createElement('div');
+  infoRow.className = 'pr-row-info';
+
+  let infoHtml = `${esc(repo)} (#${pr.number})`;
+  if (pr.additions != null) infoHtml += ` <span class="stat-add">+${pr.additions}</span>`;
+  if (pr.deletions  != null) infoHtml += ` <span class="stat-del">-${pr.deletions}</span>`;
+  if (pr.changed_files != null) infoHtml += ` <span>@ ${pr.changed_files}</span>`;
+  infoRow.innerHTML = infoHtml;
+  left.appendChild(infoRow);
+
+  // ── Right column: author ──────────────────────────
+  const right = document.createElement('div');
+  right.className = 'pr-card-right';
+
+  const avatar = document.createElement('img');
+  avatar.className = 'pr-avatar';
+  avatar.src = esc(pr.user?.avatar_url || '');
+  avatar.alt = '';
+  right.appendChild(avatar);
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'pr-author';
+  authorEl.textContent = pr.user?.login || '';
+  right.appendChild(authorEl);
+
+  body.appendChild(left);
+  body.appendChild(right);
+  card.appendChild(body);
+
+  return { card, titleRow, statusRow, infoRow };
 }
 
 function renderIncomingCard(pr) {
-  const card = buildBaseCard(pr);
-  const actions = document.createElement('div');
-  actions.className = 'pr-card-actions';
-
-  const muteWrapper = document.createElement('div');
-  muteWrapper.className = 'mute-wrapper';
-
-  const muteBtn = document.createElement('button');
-  muteBtn.className = 'mute-btn';
-  muteBtn.innerHTML = 'Mute <span style="font-size:10px">▾</span>';
-  muteBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleMuteMenu(pr.node_id, muteBtn);
-  });
-
-  muteWrapper.appendChild(muteBtn);
-  actions.appendChild(muteWrapper);
-  card.appendChild(actions);
+  const { card, titleRow } = buildBaseCard(pr);
+  titleRow.appendChild(createMuteWrapper(pr.node_id));
   return card;
 }
 
 function renderMutedCard(pr) {
-  const card = buildBaseCard(pr);
   const state = allPRState[pr.node_id] || {};
-  const actions = document.createElement('div');
-  actions.className = 'pr-card-actions';
-
-  const label = document.createElement('span');
-  label.className = 'mute-label';
-  label.textContent = '🔇 ' + muteLabel(state);
+  const { card, titleRow, statusRow } = buildBaseCard(pr);
 
   const unmuteBtn = document.createElement('button');
   unmuteBtn.className = 'unmute-btn';
   unmuteBtn.textContent = 'Unmute';
   unmuteBtn.addEventListener('click', () => unmutePR(pr.node_id));
+  titleRow.appendChild(unmuteBtn);
 
-  actions.appendChild(label);
-  actions.appendChild(unmuteBtn);
-  card.appendChild(actions);
+  const muteInfo = document.createElement('span');
+  muteInfo.className = 'mute-label';
+  muteInfo.textContent = '🔇 ' + muteLabel(state);
+  statusRow.appendChild(muteInfo);
+
   return card;
 }
 
 function renderReviewedCard(pr) {
-  const card = buildBaseCard(pr);
+  const { card } = buildBaseCard(pr);
   return card;
 }
 
 function renderMyPRCard(pr) {
-  const card = buildBaseCard(pr);
-
-  // Append review status info
-  const metaEl = card.querySelector('.pr-meta');
-  if (metaEl) {
-    const reviewStatus = myPRReviewStatus(pr);
-    if (reviewStatus) {
-      metaEl.insertAdjacentHTML('beforeend', `<span>•</span>${reviewStatus}`);
-    }
-  }
-
+  const { card } = buildBaseCard(pr);
   return card;
+}
+
+// ─── Mute button / wrapper ───────────────────────────────────────────────────
+
+function createMuteWrapper(nodeId) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'mute-wrapper';
+
+  const btn = document.createElement('button');
+  btn.className = 'mute-btn';
+  btn.title = 'Mute';
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    <path d="M18.63 13A17.89 17.89 0 0 1 18 8"/>
+    <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/>
+    <path d="M18 8a6 6 0 0 0-9.33-5"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>`;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMuteMenu(nodeId, btn);
+  });
+
+  wrapper.appendChild(btn);
+  return wrapper;
 }
 
 // ─── Mute menu (portal pattern) ──────────────────────────────────────────────
@@ -196,9 +271,12 @@ function getOrCreateMuteMenuEl() {
     el.id = MUTE_MENU_ID;
     el.className = 'mute-menu';
     el.innerHTML = `
-      <button class="mute-menu-item" data-type="until_comment">Until next comment from author</button>
-      <button class="mute-menu-item" data-type="until_update">Until any update by author</button>
-      <button class="mute-menu-item" data-type="until_time">For X hours…</button>
+      <button class="mute-menu-item" data-type="until_comment">Until author comments</button>
+      <button class="mute-menu-item" data-type="until_update">Until author pushes</button>
+      <div class="mute-menu-sep"></div>
+      <button class="mute-menu-item" data-type="until_time_1">1 hour</button>
+      <button class="mute-menu-item" data-type="until_time_24">24 hours</button>
+      <div class="mute-menu-sep"></div>
       <button class="mute-menu-item" data-type="forever">Forever</button>
     `;
     document.body.appendChild(el);
@@ -207,7 +285,7 @@ function getOrCreateMuteMenuEl() {
       const item = e.target.closest('.mute-menu-item');
       if (!item || !openMuteMenuId) return;
       const type = item.dataset.type;
-      const nodeId = openMuteMenuId; // capture before closeMuteMenu clears it
+      const nodeId = openMuteMenuId;
       closeMuteMenu();
       handleMuteSelection(nodeId, type);
     });
@@ -225,16 +303,12 @@ function toggleMuteMenu(nodeId, anchorBtn) {
 
   openMuteMenuId = nodeId;
 
-  // Position relative to viewport
   const rect = anchorBtn.getBoundingClientRect();
-  const bodyRect = document.body.getBoundingClientRect();
-
   menu.style.position = 'fixed';
   menu.style.right = `${window.innerWidth - rect.right}px`;
 
-  // Open upward if near bottom, downward otherwise
   const spaceBelow = window.innerHeight - rect.bottom;
-  if (spaceBelow < 150) {
+  if (spaceBelow < 160) {
     menu.style.bottom = `${window.innerHeight - rect.top}px`;
     menu.style.top = 'auto';
   } else {
@@ -251,7 +325,6 @@ function closeMuteMenu() {
   openMuteMenuId = null;
 }
 
-// Close menu on outside click
 document.addEventListener('click', (e) => {
   if (openMuteMenuId && !e.target.closest('.mute-btn') && !e.target.closest(`#${MUTE_MENU_ID}`)) {
     closeMuteMenu();
@@ -261,12 +334,13 @@ document.addEventListener('click', (e) => {
 // ─── Mute actions ─────────────────────────────────────────────────────────────
 
 async function handleMuteSelection(nodeId, type) {
-  if (type === 'until_time') {
-    pendingMutePR = nodeId;
-    showMuteDialog();
-    return;
+  if (type === 'until_time_1') {
+    await applyMute(nodeId, 'until_time', 1);
+  } else if (type === 'until_time_24') {
+    await applyMute(nodeId, 'until_time', 24);
+  } else {
+    await applyMute(nodeId, type, null);
   }
-  await applyMute(nodeId, type, null);
 }
 
 async function applyMute(nodeId, type, hours) {
@@ -310,42 +384,10 @@ function findPRByNodeId(nodeId) {
   ].find(p => p.node_id === nodeId);
 }
 
-// ─── Mute hours dialog ────────────────────────────────────────────────────────
-
-function showMuteDialog() {
-  document.getElementById('muteDialog').classList.remove('hidden');
-  document.getElementById('muteHours').focus();
-}
-
-function hideMuteDialog() {
-  document.getElementById('muteDialog').classList.add('hidden');
-  pendingMutePR = null;
-}
-
-document.getElementById('muteCancelBtn').addEventListener('click', hideMuteDialog);
-
-document.getElementById('muteConfirmBtn').addEventListener('click', async () => {
-  const hours = parseInt(document.getElementById('muteHours').value, 10);
-  if (!hours || hours < 1) return;
-  hideMuteDialog();
-  if (pendingMutePR) {
-    await applyMute(pendingMutePR, 'until_time', hours);
-    pendingMutePR = null;
-  }
-});
-
-document.getElementById('muteHours').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('muteConfirmBtn').click();
-  if (e.key === 'Escape') hideMuteDialog();
-});
-
 // ─── Tab switching ────────────────────────────────────────────────────────────
 
 document.querySelectorAll('.tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    switchTab(tab);
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
 function switchTab(tab) {
@@ -355,22 +397,27 @@ function switchTab(tab) {
   closeMuteMenu();
 }
 
-// ─── Incoming filter pills ────────────────────────────────────────────────────
+// ─── Incoming filter checkboxes ──────────────────────────────────────────────
 
-document.querySelectorAll('#requestFilter .pill').forEach(pill => {
-  pill.addEventListener('click', async () => {
-    requestFilter = pill.dataset.value;
-    syncFilterPills();
-    allPRState = await getAllPRState();
-    const { raw, lastUpdated } = await getCachedPRs();
-    renderAll(raw, lastUpdated);
-  });
+document.getElementById('includeTeamsChk').addEventListener('change', async (e) => {
+  requestFilter = e.target.checked ? 'teams' : 'direct';
+  await savePopupPrefs({ requestFilter, ignoreDrafts });
+  allPRState = await getAllPRState();
+  const { raw, lastUpdated } = await getCachedPRs();
+  renderAll(raw, lastUpdated);
 });
 
-function syncFilterPills() {
-  document.querySelectorAll('#requestFilter .pill').forEach(p => {
-    p.classList.toggle('active', p.dataset.value === requestFilter);
-  });
+document.getElementById('includeDraftsChk').addEventListener('change', async (e) => {
+  ignoreDrafts = !e.target.checked;
+  await savePopupPrefs({ requestFilter, ignoreDrafts });
+  allPRState = await getAllPRState();
+  const { raw, lastUpdated } = await getCachedPRs();
+  renderAll(raw, lastUpdated);
+});
+
+function syncFilterUI() {
+  document.getElementById('includeTeamsChk').checked = (requestFilter === 'teams');
+  document.getElementById('includeDraftsChk').checked = !ignoreDrafts;
 }
 
 // ─── Header buttons ───────────────────────────────────────────────────────────
@@ -421,7 +468,6 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
-// Only allow https: URLs in href attributes — blocks javascript: and data: URIs.
 function safeHref(url) {
   try {
     const parsed = new URL(url);
@@ -438,20 +484,37 @@ function parseRepoFromPR(pr) {
   return { owner: match[1], repo: match[2] };
 }
 
-function ciStatusDot(pr) {
-  // GitHub search results don't include CI status directly;
-  // we store it as _ciStatus if enriched by service worker
-  const status = pr._ciStatus;
-  if (!status) return '<span class="ci-dot ci-none" title="No CI info"></span>';
-  if (status === 'success') return '<span class="ci-dot ci-pass" title="CI passing"></span>';
-  if (status === 'failure' || status === 'error') return '<span class="ci-dot ci-fail" title="CI failing"></span>';
-  return '<span class="ci-dot ci-pending" title="CI pending"></span>';
+function prStatusBadge(pr) {
+  switch (pr._mergeableState) {
+    case 'clean':                return '<span class="status-badge status-mergeable">Mergeable</span>';
+    case 'unstable':             return '<span class="status-badge status-failed">Checks failed</span>';
+    case 'blocked': case 'behind':
+    case 'unknown':              return '<span class="status-badge status-pending">Checks pending</span>';
+    default:                     return null; // dirty handled separately
+  }
+}
+
+function prConflictsBadge(pr) {
+  return pr._mergeableState === 'dirty'
+    ? '<span class="status-badge status-failed">Conflicts</span>'
+    : null;
+}
+
+function prReviewBadge(pr) {
+  if (pr._mergeableState === 'clean') return null;
+  if (pr._prReviewState === 'APPROVED') {
+    return '<span class="status-badge status-approved">Approved</span>';
+  }
+  if (pr._prReviewState === 'CHANGES_REQUESTED') {
+    return '<span class="status-badge status-changes">Changes Requested</span>';
+  }
+  return '<span class="status-badge status-unreviewed">Unreviewed</span>';
 }
 
 function muteLabel(state) {
   switch (state.muteType) {
     case 'until_comment': return 'Until next author comment';
-    case 'until_update': return 'Until any update by author';
+    case 'until_update':  return 'Until any update by author';
     case 'until_time': {
       if (!state.muteUntil) return 'Muted';
       const h = Math.ceil((state.muteUntil - Date.now()) / 3600_000);
@@ -459,19 +522,6 @@ function muteLabel(state) {
     }
     case 'forever': return 'Muted forever';
     default: return 'Muted';
-  }
-}
-
-function myPRReviewStatus(pr) {
-  // PR review status is stored on the enriched object
-  if (!pr._reviewStatus) return null;
-  switch (pr._reviewStatus) {
-    case 'APPROVED':
-      return '<span class="review-badge approved">✓ Approved</span>';
-    case 'CHANGES_REQUESTED':
-      return '<span class="review-badge changes">⚠ Changes requested</span>';
-    default:
-      return `<span class="review-badge pending">${pr._pendingReviewers ?? 0} reviewers pending</span>`;
   }
 }
 
